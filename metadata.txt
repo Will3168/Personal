@@ -1,0 +1,6 @@
+[general]
+name=Sketcher de torons
+description=Creates features of "torons" by clicking on two "poteaux" on the map instead of manually drawing and snapping a line on two poles.
+author=William
+icon=icon.svg
+version=0.1.0
