@@ -1,32 +1,31 @@
 import QtQuick
-import QtQuick.Controls  
+import QtQuick.Controls
 import org.qfield
 import org.qgis
 import Theme
 
 Item {
-      id: plugin
+    id: plugin
 
-      property var toolbarButton: null
+    property var toolbarButton: null
 
-      Component {
-          id: buttonComponent
+    Component {
+        id: buttonComponent
 
-          QfToolButton {
-              id: sketcherButton
-              iconSource: "icon.svg"
-              bgcolor: Theme.darkGray
-              round: true
+        QfToolButton {
+            id: sketcherButton
+            iconSource: "icon.svg"
+            bgcolor: Theme.darkGray
+            round: true
 
-              onClicked: {
-                  console.log("Toron Sketcher clicked")
-              }
-          }
-      }
+            onClicked: {
+                iface.mainMessageLog().logMessage("Sketcher", "Button clicked!")
+            }
+        }
+    }
 
-      Component.onCompleted: {
-          toolbarButton = buttonComponent.createObject(iface.pluginsToolbar())
-          iface.addItemToPluginsToolbar(toolbarButton)
-          console.log("Toron Sketcher plugin loaded")
-      }
-  }
+    Component.onCompleted: {
+        toolbarButton = buttonComponent.createObject(null)
+        iface.addItemToPluginsToolbar(toolbarButton)
+    }
+}
