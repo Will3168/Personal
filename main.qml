@@ -19,7 +19,7 @@ Item {
             round: true
 
             onClicked: {
-                iface.mainMessageLog().logMessage("Sketcher", "Button clicked!")
+                iface.mainWindow().displayToast("Sketcher button clicked!")
             }
         }
     }
