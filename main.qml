@@ -77,14 +77,17 @@ Item {
     }
 
     // --- Logic ---
-    function handleMapTap(point) {
-        // Placeholder for Phase 4.3 (spatial query)
-        // `point` is in screen (pixel) coordinates relative to the map canvas.
-        // We'll convert to map/world coordinates in Phase 4.3.
-        iface.mainWindow().displayToast(
-            "Tap: " + Math.round(point.x) + ", " + Math.round(point.y) +
-            " (poteaux sélectionnés: " + plugin.selectedPoles.length + ")"
-        )
+    // Phase 4.3a — convert screen pixels to map coordinates (CRS conversion)
+    function handleMapTap(screenPoint) {
+        try {
+            var mapSettings = iface.mapCanvas().mapSettings
+            var mapPoint = mapSettings.screenToCoordinate(screenPoint)
+            iface.mainWindow().displayToast(
+                "Map coords: " + mapPoint.x.toFixed(2) + ", " + mapPoint.y.toFixed(2)
+            )
+        } catch (e) {
+            iface.mainWindow().displayToast("Erreur 4.3a: " + e)
+        }
     }
 
     function toggleSketching() {
