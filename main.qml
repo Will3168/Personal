@@ -56,7 +56,28 @@ Item {
         }
     }
 
+    // --- Map tap capture ---
+    // Listen to the map canvas click signal. Only react when sketching is active.
+    Connections {
+        target: iface.mapCanvas()
+
+        function onClicked(point) {
+            if (!plugin.sketchingActive) {
+                return
+            }
+            plugin.handleMapTap(point)
+        }
+    }
+
     // --- Logic ---
+    function handleMapTap(point) {
+        // Placeholder for Phase 4.3 (spatial query)
+        // `point` should be a screen or map coordinate depending on the signal
+        iface.mainWindow().displayToast("Tap détecté: " + point.x + ", " + point.y)
+        console.log("[Sketcher] Map tap at:", point.x, point.y,
+                    "| selectedPoles.length =", plugin.selectedPoles.length)
+    }
+
     function toggleSketching() {
         if (plugin.sketchingActive) {
             // Turning OFF mid-flow: reset state
