@@ -56,16 +56,52 @@ Item {
         }
     }
 
-    // --- Map tap capture ---
-    // Listen to the map canvas click signal. Only react when sketching is active.
+    // --- Map tap capture (DEBUG: brute-force signal detection) ---
+    // Listen to several possible signals to find which one the map canvas actually emits.
+    // Once we know the right one, delete the others.
     Connections {
         target: iface.mapCanvas()
 
         function onClicked(point) {
-            if (!plugin.sketchingActive) {
-                return
-            }
-            plugin.handleMapTap(point)
+            iface.mainWindow().displayToast("clicked fired!")
+            console.log("[Sketcher DEBUG] onClicked fired", point)
+            if (plugin.sketchingActive) plugin.handleMapTap(point)
+        }
+
+        function onMapClicked(point) {
+            iface.mainWindow().displayToast("mapClicked fired!")
+            console.log("[Sketcher DEBUG] onMapClicked fired", point)
+            if (plugin.sketchingActive) plugin.handleMapTap(point)
+        }
+
+        function onCanvasClicked(point) {
+            iface.mainWindow().displayToast("canvasClicked fired!")
+            console.log("[Sketcher DEBUG] onCanvasClicked fired", point)
+            if (plugin.sketchingActive) plugin.handleMapTap(point)
+        }
+
+        function onLongPressed(point) {
+            iface.mainWindow().displayToast("longPressed fired!")
+            console.log("[Sketcher DEBUG] onLongPressed fired", point)
+            if (plugin.sketchingActive) plugin.handleMapTap(point)
+        }
+
+        function onPressed(point) {
+            iface.mainWindow().displayToast("pressed fired!")
+            console.log("[Sketcher DEBUG] onPressed fired", point)
+            if (plugin.sketchingActive) plugin.handleMapTap(point)
+        }
+
+        function onReleased(point) {
+            iface.mainWindow().displayToast("released fired!")
+            console.log("[Sketcher DEBUG] onReleased fired", point)
+            if (plugin.sketchingActive) plugin.handleMapTap(point)
+        }
+
+        function onTapped(point) {
+            iface.mainWindow().displayToast("tapped fired!")
+            console.log("[Sketcher DEBUG] onTapped fired", point)
+            if (plugin.sketchingActive) plugin.handleMapTap(point)
         }
     }
 
