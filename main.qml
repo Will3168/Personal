@@ -14,6 +14,7 @@ Item {
     // --- References to objects created at runtime ---
     property var toolbarButton: null
     property var sketchingBanner: null
+    property var mapCanvasRef: null
 
     // --- Toolbar button ---
     Component {
@@ -60,7 +61,7 @@ Item {
     // Listen to several possible signals to find which one the map canvas actually emits.
     // Once we know the right one, delete the others.
     Connections {
-        target: iface.mapCanvas()
+        target: plugin.mapCanvasRef
 
         function onClicked(point) {
             iface.mainWindow().displayToast("clicked fired!")
@@ -134,5 +135,33 @@ Item {
         iface.addItemToPluginsToolbar(toolbarButton)
 
         sketchingBanner = bannerComponent.createObject(iface.mainWindow().contentItem)
+
+        // --- DIAGNOSTICS ---
+        console.log("[Sketcher DEBUG] ================================")
+        console.log("[Sketcher DEBUG] Plugin loaded")
+        console.log("[Sketcher DEBUG] iface =", iface)
+        console.log("[Sketcher DEBUG] iface.mapCanvas =", iface.mapCanvas)
+        try {
+            var mc = iface.mapCanvas()
+            console.log("[Sketcher DEBUG] iface.mapCanvas() =", mc)
+            console.log("[Sketcher DEBUG] typeof =", typeof mc)
+            if (mc) {
+                console.log("[Sketcher DEBUG] mc.toString =", mc.toString())
+                // Try to list properties/signals
+                for (var k in mc) {
+                    console.log("[Sketcher DEBUG]   member:", k)
+                }
+            } else {
+                console.log("[Sketcher DEBUG] mapCanvas() returned null/undefined")
+            }
+            plugin.mapCanvasRef = mc
+            console.log("[Sketcher DEBUG] mapCanvasRef set to", plugin.mapCanvasRef)
+        } catch (e) {
+            console.log("[Sketcher DEBUG] ERROR calling mapCanvas():", e)
+            iface.mainWindow().displayToast("ERROR: " + e)
+        }
+        console.log("[Sketcher DEBUG] ================================")
+
+        iface.mainWindow().displayToast("Plugin loaded — check log")
     }
 }
