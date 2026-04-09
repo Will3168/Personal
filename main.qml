@@ -14,7 +14,7 @@ Item {
     // --- References to objects created at runtime ---
     property var toolbarButton: null
     property var sketchingBanner: null
-    property var mapCanvasRef: null
+    property var tapCatcher: null
 
     // --- Toolbar button ---
     Component {
@@ -57,62 +57,34 @@ Item {
         }
     }
 
-    // --- Map tap capture (DEBUG: brute-force signal detection) ---
-    // Listen to several possible signals to find which one the map canvas actually emits.
-    // Once we know the right one, delete the others.
-    Connections {
-        target: plugin.mapCanvasRef
+    // --- Map tap capture (MouseArea overlay approach) ---
+    // Signals on iface.mapCanvas() didn't fire, so we use a MouseArea placed
+    // directly over the map canvas. It's only enabled when sketching is active,
+    // so normal map interaction (pan/zoom) is preserved when the plugin is off.
+    Component {
+        id: tapCatcherComponent
 
-        function onClicked(point) {
-            iface.mainWindow().displayToast("clicked fired!")
-            console.log("[Sketcher DEBUG] onClicked fired", point)
-            if (plugin.sketchingActive) plugin.handleMapTap(point)
-        }
+        MouseArea {
+            id: catcher
+            anchors.fill: parent
+            enabled: plugin.sketchingActive
+            z: 999
 
-        function onMapClicked(point) {
-            iface.mainWindow().displayToast("mapClicked fired!")
-            console.log("[Sketcher DEBUG] onMapClicked fired", point)
-            if (plugin.sketchingActive) plugin.handleMapTap(point)
-        }
-
-        function onCanvasClicked(point) {
-            iface.mainWindow().displayToast("canvasClicked fired!")
-            console.log("[Sketcher DEBUG] onCanvasClicked fired", point)
-            if (plugin.sketchingActive) plugin.handleMapTap(point)
-        }
-
-        function onLongPressed(point) {
-            iface.mainWindow().displayToast("longPressed fired!")
-            console.log("[Sketcher DEBUG] onLongPressed fired", point)
-            if (plugin.sketchingActive) plugin.handleMapTap(point)
-        }
-
-        function onPressed(point) {
-            iface.mainWindow().displayToast("pressed fired!")
-            console.log("[Sketcher DEBUG] onPressed fired", point)
-            if (plugin.sketchingActive) plugin.handleMapTap(point)
-        }
-
-        function onReleased(point) {
-            iface.mainWindow().displayToast("released fired!")
-            console.log("[Sketcher DEBUG] onReleased fired", point)
-            if (plugin.sketchingActive) plugin.handleMapTap(point)
-        }
-
-        function onTapped(point) {
-            iface.mainWindow().displayToast("tapped fired!")
-            console.log("[Sketcher DEBUG] onTapped fired", point)
-            if (plugin.sketchingActive) plugin.handleMapTap(point)
+            onClicked: (mouse) => {
+                plugin.handleMapTap(Qt.point(mouse.x, mouse.y))
+            }
         }
     }
 
     // --- Logic ---
     function handleMapTap(point) {
         // Placeholder for Phase 4.3 (spatial query)
-        // `point` should be a screen or map coordinate depending on the signal
-        iface.mainWindow().displayToast("Tap détecté: " + point.x + ", " + point.y)
-        console.log("[Sketcher] Map tap at:", point.x, point.y,
-                    "| selectedPoles.length =", plugin.selectedPoles.length)
+        // `point` is in screen (pixel) coordinates relative to the map canvas.
+        // We'll convert to map/world coordinates in Phase 4.3.
+        iface.mainWindow().displayToast(
+            "Tap: " + Math.round(point.x) + ", " + Math.round(point.y) +
+            " (poteaux sélectionnés: " + plugin.selectedPoles.length + ")"
+        )
     }
 
     function toggleSketching() {
@@ -136,32 +108,17 @@ Item {
 
         sketchingBanner = bannerComponent.createObject(iface.mainWindow().contentItem)
 
-        // --- DIAGNOSTICS ---
-        console.log("[Sketcher DEBUG] ================================")
-        console.log("[Sketcher DEBUG] Plugin loaded")
-        console.log("[Sketcher DEBUG] iface =", iface)
-        console.log("[Sketcher DEBUG] iface.mapCanvas =", iface.mapCanvas)
+        // Create the tap catcher as a child of the map canvas so it overlays the map
         try {
             var mc = iface.mapCanvas()
-            console.log("[Sketcher DEBUG] iface.mapCanvas() =", mc)
-            console.log("[Sketcher DEBUG] typeof =", typeof mc)
             if (mc) {
-                console.log("[Sketcher DEBUG] mc.toString =", mc.toString())
-                // Try to list properties/signals
-                for (var k in mc) {
-                    console.log("[Sketcher DEBUG]   member:", k)
-                }
+                tapCatcher = tapCatcherComponent.createObject(mc)
+                iface.mainWindow().displayToast("Plugin prêt (tap catcher OK)")
             } else {
-                console.log("[Sketcher DEBUG] mapCanvas() returned null/undefined")
+                iface.mainWindow().displayToast("ERREUR: mapCanvas() est null")
             }
-            plugin.mapCanvasRef = mc
-            console.log("[Sketcher DEBUG] mapCanvasRef set to", plugin.mapCanvasRef)
         } catch (e) {
-            console.log("[Sketcher DEBUG] ERROR calling mapCanvas():", e)
-            iface.mainWindow().displayToast("ERROR: " + e)
+            iface.mainWindow().displayToast("ERREUR tap catcher: " + e)
         }
-        console.log("[Sketcher DEBUG] ================================")
-
-        iface.mainWindow().displayToast("Plugin loaded — check log")
     }
 }
