@@ -61,9 +61,6 @@ Item {
     }
 
     // --- Map tap capture ---
-    // Simple MouseArea overlay. Pan/zoom are blocked while sketching is active.
-    // This is acceptable because sketching mode is brief (2 taps then auto-exit).
-    // User can deactivate sketching to navigate, then re-activate.
     Component {
         id: tapCatcherComponent
 
@@ -79,13 +76,20 @@ Item {
         }
     }
 
+    // --- Feature access model ---
+    // QField doesn't expose QgsVectorLayer methods like getFeatures() or
+    // featureCount() to QML. Instead we use FeatureListModel, which is
+    // QField's QML bridge for reading features from a layer.
+    FeatureListModel {
+        id: poteauxModel
+    }
+
     // --- Logic ---
 
     // Find the POTEAUX layer (cached after first lookup)
     function findPoteauxLayer() {
         if (plugin.poteauxLayer) return plugin.poteauxLayer
 
-        // Try exact names that might be used in different projects
         var namesToTry = [
             "POTEAUX",
             "demo_releve_alias 1 \u2014 POTEAUX",
@@ -103,15 +107,6 @@ Item {
                 // Name didn't work, try next
             }
         }
-
-        // Fallback: iterate all layers and find one containing "POTEAUX"
-        try {
-            var allLayers = qgisProject.mapLayersByName("")
-            // This probably won't work, but we tried
-        } catch (e) {
-            // Expected
-        }
-
         return null
     }
 
@@ -124,7 +119,16 @@ Item {
             // 4.3b — Find the POTEAUX layer
             var layer = findPoteauxLayer()
             if (!layer) {
-                iface.mainWindow().displayToast("Couche POTEAUX introuvable dans le projet")
+                iface.mainWindow().displayToast("Couche POTEAUX introuvable")
+                return
+            }
+
+            // Load features into the model
+            poteauxModel.currentLayer = layer
+
+            var count = poteauxModel.rowCount()
+            if (count === 0) {
+                iface.mainWindow().displayToast("Aucun feature dans POTEAUX (count=0)")
                 return
             }
 
@@ -132,59 +136,74 @@ Item {
             var mpp = mapSettings.mapUnitsPerPixel
             var tol = mpp * 40
 
-            // 4.3d — Query features near the tap
-            // QField doesn't expose getFeatures() to QML.
-            // Try getFeature(fid) for each known feature instead.
-            var nearestFeature = null
+            // 4.3d — Find the nearest pole
+            var nearestIndex = -1
             var nearestDist = tol
-            var nearestPoint = null
-            var count = layer.featureCount()
+            var nearestX = 0
+            var nearestY = 0
 
-            for (var fid = 1; fid <= count + 10; fid++) {
+            for (var i = 0; i < count; i++) {
+                var modelIndex = poteauxModel.index(i, 0)
+
+                // Try different role names to get the geometry
+                var geom = poteauxModel.data(modelIndex, 257)  // Qt.UserRole + 1 often = geometry
+                var feat = poteauxModel.data(modelIndex, 256)  // Qt.UserRole often = feature
+
+                // Try to get point coordinates from the feature/geometry
+                var px, py
                 try {
-                    var feat = layer.getFeature(fid)
-                    if (!feat || !feat.isValid()) continue
-
-                    var geom = feat.geometry()
-                    var pt = geom.asPoint()
-                    var dx = pt.x - mapPoint.x
-                    var dy = pt.y - mapPoint.y
-                    var dist = Math.sqrt(dx * dx + dy * dy)
-
-                    if (dist < nearestDist) {
-                        nearestDist = dist
-                        nearestFeature = feat
-                        nearestPoint = pt
+                    if (feat && feat.geometry) {
+                        var pt = feat.geometry().asPoint()
+                        px = pt.x; py = pt.y
+                    } else if (geom && geom.asPoint) {
+                        var pt2 = geom.asPoint()
+                        px = pt2.x; py = pt2.y
+                    } else {
+                        continue
                     }
-                } catch (innerErr) {
-                    // fid doesn't exist, skip
+                } catch (geoErr) {
+                    continue
+                }
+
+                var dx = px - mapPoint.x
+                var dy = py - mapPoint.y
+                var dist = Math.sqrt(dx * dx + dy * dy)
+
+                if (dist < nearestDist) {
+                    nearestDist = dist
+                    nearestDist = dist
+                    nearestIndex = i
+                    nearestX = px
+                    nearestY = py
                 }
             }
 
             // 4.3e — Handle result
-            if (!nearestFeature) {
-                iface.mainWindow().displayToast("Aucun poteau trouv\u00e9 \u00e0 proximit\u00e9")
+            if (nearestIndex < 0) {
+                iface.mainWindow().displayToast(
+                    "Aucun poteau trouv\u00e9 \u00e0 proximit\u00e9 (count=" + count + ")"
+                )
                 return
             }
 
-            // 4.3f — Add to selected poles
-            var name = nearestFeature.attribute("nom_poteau_civique")
-            if (!name) name = "fid " + nearestFeature.id()
+            // 4.3f — Get the feature name and add to selected poles
+            var nameIndex = poteauxModel.index(nearestIndex, 0)
+            var displayName = poteauxModel.data(nameIndex, Qt.DisplayRole)
+            if (!displayName) displayName = "Poteau #" + (nearestIndex + 1)
 
             var poles = plugin.selectedPoles.slice()
             poles.push({
-                fid: nearestFeature.id(),
-                name: name,
-                x: nearestPoint.x,
-                y: nearestPoint.y
+                index: nearestIndex,
+                name: "" + displayName,
+                x: nearestX,
+                y: nearestY
             })
             plugin.selectedPoles = poles
 
             iface.mainWindow().displayToast(
-                "Poteau " + plugin.selectedPoles.length + "/2: " + name
+                "Poteau " + plugin.selectedPoles.length + "/2: " + displayName
             )
 
-            // If we have 2 poles, proceed to create the toron (Phase 4.4)
             if (plugin.selectedPoles.length >= 2) {
                 plugin.createToron()
             }
@@ -194,7 +213,7 @@ Item {
         }
     }
 
-    // Phase 4.4 placeholder — will create the TORONS geometry
+    // Phase 4.4 placeholder
     function createToron() {
         iface.mainWindow().displayToast(
             "2 poteaux s\u00e9lectionn\u00e9s: " +
@@ -202,7 +221,6 @@ Item {
             plugin.selectedPoles[1].name +
             " (cr\u00e9ation toron \u00e0 impl\u00e9menter)"
         )
-        // Reset for now
         plugin.sketchingActive = false
         plugin.selectedPoles = []
     }
