@@ -118,9 +118,13 @@ Item {
             layer.selectAll()
 
             var ids = layer.selectedFeatureIds()
+            iface.mainWindow().displayToast(
+                "selectAll done. ids=" + JSON.stringify(ids) +
+                " type=" + typeof ids +
+                " len=" + (ids ? ids.length : "null")
+            )
             if (!ids || ids.length === 0) {
                 layer.removeSelection()
-                iface.mainWindow().displayToast("Aucun poteau trouv\u00e9 \u00e0 proximit\u00e9")
                 return
             }
 
