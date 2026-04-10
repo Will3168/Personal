@@ -112,14 +112,25 @@ Item {
                 return
             }
 
-            // 4.3c+d — Try getFeature directly with known fids
-            // Diagnostic: test what getFeature returns for fid=1
+            // 4.3c — Diagnostic: test geometry + attribute access
             var testFeat = layer.getFeature(1)
-            iface.mainWindow().displayToast(
-                "getFeature(1): " + testFeat +
-                " type=" + typeof testFeat
-            )
-            return  // STOP HERE — just testing getFeature first
+            var info = "fid=1: "
+            try {
+                var g = testFeat.geometry()
+                info += "geom=" + g + " | "
+                var p = g.asPoint()
+                info += "pt=" + p + " x=" + p.x + " y=" + p.y + " | "
+            } catch (ge) {
+                info += "geomErr=" + ge + " | "
+            }
+            try {
+                var attr = testFeat.attribute("nom_poteau_civique")
+                info += "name=" + attr
+            } catch (ae) {
+                info += "attrErr=" + ae
+            }
+            iface.mainWindow().displayToast(info)
+            return
 
             var name = "test"
 
