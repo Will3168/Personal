@@ -112,12 +112,10 @@ Item {
                 return
             }
 
-            // 4.3c+d — Use a QGIS expression to select features near the tap
+            // 4.3c+d — Select all features (only 3 poles), find nearest in JS
             var mpp = mapSettings.mapUnitsPerPixel
-            var tol = mpp * 40
-            var expr = "distance($geometry, make_point(" +
-                       mapPoint.x + "," + mapPoint.y + ")) < " + tol
-            layer.selectByExpression(expr, 0)  // 0 = SetSelection
+            var tol = mpp * 60  // 60 pixel tolerance
+            layer.selectAll()
 
             var ids = layer.selectedFeatureIds()
             if (!ids || ids.length === 0) {
