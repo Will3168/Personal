@@ -132,81 +132,30 @@ Item {
                 return
             }
 
-            // 4.3c — Build tolerance (40 pixels in map units)
-            var mpp = mapSettings.mapUnitsPerPixel
-            var tol = mpp * 40
-
-            // 4.3d — Find the nearest pole
-            var nearestIndex = -1
-            var nearestDist = tol
-            var nearestX = 0
-            var nearestY = 0
-
-            for (var i = 0; i < count; i++) {
-                var modelIndex = poteauxModel.index(i, 0)
-
-                // Try different role names to get the geometry
-                var geom = poteauxModel.data(modelIndex, 257)  // Qt.UserRole + 1 often = geometry
-                var feat = poteauxModel.data(modelIndex, 256)  // Qt.UserRole often = feature
-
-                // Try to get point coordinates from the feature/geometry
-                var px, py
-                try {
-                    if (feat && feat.geometry) {
-                        var pt = feat.geometry().asPoint()
-                        px = pt.x; py = pt.y
-                    } else if (geom && geom.asPoint) {
-                        var pt2 = geom.asPoint()
-                        px = pt2.x; py = pt2.y
-                    } else {
-                        continue
-                    }
-                } catch (geoErr) {
-                    continue
-                }
-
-                var dx = px - mapPoint.x
-                var dy = py - mapPoint.y
-                var dist = Math.sqrt(dx * dx + dy * dy)
-
-                if (dist < nearestDist) {
-                    nearestDist = dist
-                    nearestDist = dist
-                    nearestIndex = i
-                    nearestX = px
-                    nearestY = py
-                }
+            // DIAGNOSTIC: dump role names and first row data
+            var roles = poteauxModel.roleNames()
+            var roleInfo = "Roles: "
+            var roleMap = {}
+            for (var r in roles) {
+                roleInfo += r + "=" + roles[r] + ", "
+                roleMap[roles[r]] = parseInt(r)
             }
+            iface.mainWindow().displayToast(roleInfo)
 
-            // 4.3e — Handle result
-            if (nearestIndex < 0) {
-                iface.mainWindow().displayToast(
-                    "Aucun poteau trouv\u00e9 \u00e0 proximit\u00e9 (count=" + count + ")"
-                )
+            // Also dump data for first row using discovered roles
+            var idx0 = poteauxModel.index(0, 0)
+            var dataInfo = "Row0: "
+            for (var rr in roles) {
+                var val = poteauxModel.data(idx0, parseInt(rr))
+                dataInfo += roles[rr] + "=" + val + " | "
+            }
+            // Show this on second tap (selectedPoles trick)
+            if (plugin.selectedPoles.length > 0) {
+                iface.mainWindow().displayToast(dataInfo)
+                plugin.selectedPoles = []
                 return
             }
-
-            // 4.3f — Get the feature name and add to selected poles
-            var nameIndex = poteauxModel.index(nearestIndex, 0)
-            var displayName = poteauxModel.data(nameIndex, Qt.DisplayRole)
-            if (!displayName) displayName = "Poteau #" + (nearestIndex + 1)
-
-            var poles = plugin.selectedPoles.slice()
-            poles.push({
-                index: nearestIndex,
-                name: "" + displayName,
-                x: nearestX,
-                y: nearestY
-            })
-            plugin.selectedPoles = poles
-
-            iface.mainWindow().displayToast(
-                "Poteau " + plugin.selectedPoles.length + "/2: " + displayName
-            )
-
-            if (plugin.selectedPoles.length >= 2) {
-                plugin.createToron()
-            }
+            plugin.selectedPoles = ["placeholder"]
 
         } catch (e) {
             iface.mainWindow().displayToast("Erreur: " + e)
