@@ -112,59 +112,16 @@ Item {
                 return
             }
 
-            // 4.3c+d — Select all features (only 3 poles), find nearest in JS
-            var mpp = mapSettings.mapUnitsPerPixel
-            var tol = mpp * 60  // 60 pixel tolerance
-            layer.selectAll()
-
-            var ids = layer.selectedFeatureIds()
+            // 4.3c+d — Try getFeature directly with known fids
+            // Diagnostic: test what getFeature returns for fid=1
+            var testFeat = layer.getFeature(1)
             iface.mainWindow().displayToast(
-                "selectAll done. ids=" + JSON.stringify(ids) +
-                " type=" + typeof ids +
-                " len=" + (ids ? ids.length : "null")
+                "getFeature(1): " + testFeat +
+                " type=" + typeof testFeat
             )
-            if (!ids || ids.length === 0) {
-                layer.removeSelection()
-                return
-            }
+            return  // STOP HERE — just testing getFeature first
 
-            // 4.3e — Find the nearest among selected features
-            var nearestId = -1
-            var nearestDist = Number.MAX_VALUE
-            var nearestX = 0
-            var nearestY = 0
-
-            for (var i = 0; i < ids.length; i++) {
-                var feat = layer.getFeature(ids[i])
-                var geom = feat.geometry()
-                var pt = geom.asPoint()
-
-                var dx = pt.x - mapPoint.x
-                var dy = pt.y - mapPoint.y
-                var dist = Math.sqrt(dx * dx + dy * dy)
-
-                if (dist < nearestDist) {
-                    nearestDist = dist
-                    nearestId = ids[i]
-                    nearestX = pt.x
-                    nearestY = pt.y
-                }
-            }
-
-            layer.removeSelection()
-
-            if (nearestId < 0) {
-                iface.mainWindow().displayToast("Aucun poteau trouv\u00e9 \u00e0 proximit\u00e9")
-                return
-            }
-
-            // 4.3f — Get feature name and add to selected poles
-            var nearestFeat = layer.getFeature(nearestId)
-            var name = ""
-            try {
-                name = nearestFeat.attribute("nom_poteau_civique")
-            } catch (attrErr) {}
-            if (!name) name = "Poteau #" + nearestId
+            var name = "test"
 
             var poles = plugin.selectedPoles.slice()
             poles.push({
