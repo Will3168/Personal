@@ -11,7 +11,7 @@ Item {
     property bool sketchingActive: false
     property var selectedPoles: []
 
-    // --- Cached layer reference (set on first tap) ---
+    // --- Cached layer reference ---
     property var poteauxLayer: null
 
     // --- References to objects created at runtime ---
@@ -35,7 +35,7 @@ Item {
         }
     }
 
-    // --- Sketching mode banner (visual indicator) ---
+    // --- Sketching mode banner ---
     Component {
         id: bannerComponent
 
@@ -76,17 +76,8 @@ Item {
         }
     }
 
-    // --- Feature access model ---
-    // QField doesn't expose QgsVectorLayer methods like getFeatures() or
-    // featureCount() to QML. Instead we use FeatureListModel, which is
-    // QField's QML bridge for reading features from a layer.
-    FeatureListModel {
-        id: poteauxModel
-    }
-
     // --- Logic ---
 
-    // Find the POTEAUX layer (cached after first lookup)
     function findPoteauxLayer() {
         if (plugin.poteauxLayer) return plugin.poteauxLayer
 
@@ -103,9 +94,7 @@ Item {
                     plugin.poteauxLayer = results[0]
                     return plugin.poteauxLayer
                 }
-            } catch (e) {
-                // Name didn't work, try next
-            }
+            } catch (e) {}
         }
         return null
     }
@@ -123,54 +112,80 @@ Item {
                 return
             }
 
-            // Load features into the model
-            poteauxModel.currentLayer = layer
+            // 4.3c — Build tolerance rectangle (40 pixels in map units)
+            var mpp = mapSettings.mapUnitsPerPixel
+            var tol = mpp * 40
+            var rect = Qt.rect(
+                mapPoint.x - tol,
+                mapPoint.y - tol,
+                tol * 2,
+                tol * 2
+            )
 
-            var count = poteauxModel.rowCount()
-            if (count === 0) {
-                iface.mainWindow().displayToast("Aucun feature dans POTEAUX (count=0)")
+            // 4.3d — Use selectByRect to find features near the tap
+            layer.selectByRect(rect, 0)  // 0 = SetSelection
+
+            var ids = layer.selectedFeatureIds()
+            if (!ids || ids.length === 0) {
+                layer.removeSelection()
+                iface.mainWindow().displayToast("Aucun poteau trouv\u00e9 \u00e0 proximit\u00e9")
                 return
             }
 
-            // DIAGNOSTIC: discover what's available
-            var tapNum = plugin.selectedPoles.length
+            // 4.3e — Find the nearest among selected features
+            var nearestId = -1
+            var nearestDist = Number.MAX_VALUE
+            var nearestX = 0
+            var nearestY = 0
 
-            if (tapNum === 0) {
-                // Tap 1: list FeatureListModel properties
-                var modelProps = []
-                for (var k in poteauxModel) {
-                    modelProps.push(k)
+            for (var i = 0; i < ids.length; i++) {
+                var feat = layer.getFeature(ids[i])
+                var geom = feat.geometry()
+                var pt = geom.asPoint()
+
+                var dx = pt.x - mapPoint.x
+                var dy = pt.y - mapPoint.y
+                var dist = Math.sqrt(dx * dx + dy * dy)
+
+                if (dist < nearestDist) {
+                    nearestDist = dist
+                    nearestId = ids[i]
+                    nearestX = pt.x
+                    nearestY = pt.y
                 }
-                iface.mainWindow().displayToast("Model props: " + modelProps.join(", "))
-                plugin.selectedPoles = ["tap1"]
+            }
+
+            layer.removeSelection()
+
+            if (nearestId < 0) {
+                iface.mainWindow().displayToast("Aucun poteau trouv\u00e9 \u00e0 proximit\u00e9")
                 return
             }
 
-            if (tapNum === 1) {
-                // Tap 2: list layer properties
-                var layerProps = []
-                for (var k2 in layer) {
-                    layerProps.push(k2)
-                }
-                iface.mainWindow().displayToast("Layer props: " + layerProps.join(", "))
-                plugin.selectedPoles = ["tap1", "tap2"]
-                return
-            }
+            // 4.3f — Get feature name and add to selected poles
+            var nearestFeat = layer.getFeature(nearestId)
+            var name = ""
+            try {
+                name = nearestFeat.attribute("nom_poteau_civique")
+            } catch (attrErr) {}
+            if (!name) name = "Poteau #" + nearestId
 
-            if (tapNum === 2) {
-                // Tap 3: list iface methods that might help with features
-                var ifaceProps = []
-                for (var k3 in iface) {
-                    if (("" + k3).toLowerCase().indexOf("feat") >= 0 ||
-                        ("" + k3).toLowerCase().indexOf("ident") >= 0 ||
-                        ("" + k3).toLowerCase().indexOf("sketc") >= 0 ||
-                        ("" + k3).toLowerCase().indexOf("layer") >= 0) {
-                        ifaceProps.push(k3)
-                    }
-                }
-                iface.mainWindow().displayToast("iface (filtered): " + ifaceProps.join(", "))
-                plugin.selectedPoles = []
-                return
+            var poles = plugin.selectedPoles.slice()
+            poles.push({
+                fid: nearestId,
+                name: "" + name,
+                x: nearestX,
+                y: nearestY
+            })
+            plugin.selectedPoles = poles
+
+            iface.mainWindow().displayToast(
+                "Poteau " + plugin.selectedPoles.length + "/2: " + name
+            )
+
+            // If we have 2 poles, create the toron
+            if (plugin.selectedPoles.length >= 2) {
+                plugin.createToron()
             }
 
         } catch (e) {
@@ -181,7 +196,7 @@ Item {
     // Phase 4.4 placeholder
     function createToron() {
         iface.mainWindow().displayToast(
-            "2 poteaux s\u00e9lectionn\u00e9s: " +
+            "2 poteaux: " +
             plugin.selectedPoles[0].name + " \u2192 " +
             plugin.selectedPoles[1].name +
             " (cr\u00e9ation toron \u00e0 impl\u00e9menter)"
