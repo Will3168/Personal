@@ -77,16 +77,27 @@ Item {
     }
 
     // --- Logic ---
-    // Phase 4.3a — convert screen pixels to map coordinates (CRS conversion)
+    // Phase 4.3a+b — convert screen→map coords, then access POTEAUX layer
     function handleMapTap(screenPoint) {
         try {
+            // 4.3a — Convert screen pixels to map coordinates
             var mapSettings = iface.mapCanvas().mapSettings
             var mapPoint = mapSettings.screenToCoordinate(screenPoint)
+
+            // 4.3b — Find the POTEAUX layer
+            var layers = qgisProject.mapLayersByName("POTEAUX")
+            if (!layers || layers.length === 0) {
+                iface.mainWindow().displayToast("Erreur 4.3b: couche POTEAUX introuvable")
+                return
+            }
+            var layer = layers[0]
+            var count = layer.featureCount()
             iface.mainWindow().displayToast(
-                "Map coords: " + mapPoint.x.toFixed(2) + ", " + mapPoint.y.toFixed(2)
+                "POTEAUX trouvé! " + count + " features. Tap: " +
+                mapPoint.x.toFixed(4) + ", " + mapPoint.y.toFixed(4)
             )
         } catch (e) {
-            iface.mainWindow().displayToast("Erreur 4.3a: " + e)
+            iface.mainWindow().displayToast("Erreur 4.3b: " + e)
         }
     }
 
