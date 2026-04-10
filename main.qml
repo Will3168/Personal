@@ -57,27 +57,49 @@ Item {
         }
     }
 
-    // --- Map tap capture (MouseArea overlay approach) ---
-    // Signals on iface.mapCanvas() didn't fire, so we use a MouseArea placed
-    // directly over the map canvas. It's only enabled when sketching is active,
-    // so normal map interaction (pan/zoom) is preserved when the plugin is off.
+    // --- Map tap capture (tap vs drag detection) ---
+    // We track press position and time. If the finger releases close to where
+    // it pressed and within a short time, it's a tap → we handle it.
+    // If the finger moves far or holds long, it's a pan/zoom → we ignore it.
     Component {
         id: tapCatcherComponent
 
-        MouseArea {
+        MultiPointTouchArea {
             id: catcher
             anchors.fill: parent
             enabled: plugin.sketchingActive
             z: 999
-            propagateComposedEvents: true
+            mouseEnabled: true
+            minimumTouchPoints: 1
+            maximumTouchPoints: 1
+            touchPoints: [ TouchPoint { id: touch1 } ]
 
-            onClicked: (mouse) => {
-                plugin.handleMapTap(Qt.point(mouse.x, mouse.y))
-                mouse.accepted = false
+            property real startX: 0
+            property real startY: 0
+            property real startTime: 0
+            property bool moved: false
+
+            onPressed: (touchPoints) => {
+                startX = touchPoints[0].x
+                startY = touchPoints[0].y
+                startTime = Date.now()
+                moved = false
             }
 
-            onPressed: (mouse) => {
-                mouse.accepted = false
+            onUpdated: (touchPoints) => {
+                var dx = touchPoints[0].x - startX
+                var dy = touchPoints[0].y - startY
+                if (Math.sqrt(dx*dx + dy*dy) > 15) {
+                    moved = true
+                }
+            }
+
+            onReleased: (touchPoints) => {
+                var elapsed = Date.now() - startTime
+                if (!moved && elapsed < 300) {
+                    // Short tap with no movement → it's a selection tap
+                    plugin.handleMapTap(Qt.point(startX, startY))
+                }
             }
         }
     }
