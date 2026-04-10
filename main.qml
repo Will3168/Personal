@@ -132,30 +132,46 @@ Item {
                 return
             }
 
-            // DIAGNOSTIC: dump role names and first row data
-            var roles = poteauxModel.roleNames()
-            var roleInfo = "Roles: "
-            var roleMap = {}
-            for (var r in roles) {
-                roleInfo += r + "=" + roles[r] + ", "
-                roleMap[roles[r]] = parseInt(r)
-            }
-            iface.mainWindow().displayToast(roleInfo)
+            // DIAGNOSTIC: discover what's available
+            var tapNum = plugin.selectedPoles.length
 
-            // Also dump data for first row using discovered roles
-            var idx0 = poteauxModel.index(0, 0)
-            var dataInfo = "Row0: "
-            for (var rr in roles) {
-                var val = poteauxModel.data(idx0, parseInt(rr))
-                dataInfo += roles[rr] + "=" + val + " | "
+            if (tapNum === 0) {
+                // Tap 1: list FeatureListModel properties
+                var modelProps = []
+                for (var k in poteauxModel) {
+                    modelProps.push(k)
+                }
+                iface.mainWindow().displayToast("Model props: " + modelProps.join(", "))
+                plugin.selectedPoles = ["tap1"]
+                return
             }
-            // Show this on second tap (selectedPoles trick)
-            if (plugin.selectedPoles.length > 0) {
-                iface.mainWindow().displayToast(dataInfo)
+
+            if (tapNum === 1) {
+                // Tap 2: list layer properties
+                var layerProps = []
+                for (var k2 in layer) {
+                    layerProps.push(k2)
+                }
+                iface.mainWindow().displayToast("Layer props: " + layerProps.join(", "))
+                plugin.selectedPoles = ["tap1", "tap2"]
+                return
+            }
+
+            if (tapNum === 2) {
+                // Tap 3: list iface methods that might help with features
+                var ifaceProps = []
+                for (var k3 in iface) {
+                    if (("" + k3).toLowerCase().indexOf("feat") >= 0 ||
+                        ("" + k3).toLowerCase().indexOf("ident") >= 0 ||
+                        ("" + k3).toLowerCase().indexOf("sketc") >= 0 ||
+                        ("" + k3).toLowerCase().indexOf("layer") >= 0) {
+                        ifaceProps.push(k3)
+                    }
+                }
+                iface.mainWindow().displayToast("iface (filtered): " + ifaceProps.join(", "))
                 plugin.selectedPoles = []
                 return
             }
-            plugin.selectedPoles = ["placeholder"]
 
         } catch (e) {
             iface.mainWindow().displayToast("Erreur: " + e)
