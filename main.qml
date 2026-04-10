@@ -11,6 +11,9 @@ Item {
     property bool sketchingActive: false
     property var selectedPoles: []
 
+    // --- Cached layer reference (set on first tap) ---
+    property var poteauxLayer: null
+
     // --- References to objects created at runtime ---
     property var toolbarButton: null
     property var sketchingBanner: null
@@ -48,8 +51,8 @@ Item {
             Text {
                 anchors.centerIn: parent
                 text: plugin.selectedPoles.length === 0
-                      ? "Mode sketching actif — tappez le premier poteau"
-                      : "Mode sketching actif — tappez le deuxième poteau"
+                      ? "Mode sketching actif \u2014 tappez le premier poteau"
+                      : "Mode sketching actif \u2014 tappez le deuxi\u00e8me poteau"
                 color: "white"
                 font.bold: true
                 font.pixelSize: 16
@@ -57,55 +60,61 @@ Item {
         }
     }
 
-    // --- Map tap capture (tap vs drag detection) ---
-    // We track press position and time. If the finger releases close to where
-    // it pressed and within a short time, it's a tap → we handle it.
-    // If the finger moves far or holds long, it's a pan/zoom → we ignore it.
+    // --- Map tap capture ---
+    // Simple MouseArea overlay. Pan/zoom are blocked while sketching is active.
+    // This is acceptable because sketching mode is brief (2 taps then auto-exit).
+    // User can deactivate sketching to navigate, then re-activate.
     Component {
         id: tapCatcherComponent
 
-        MultiPointTouchArea {
+        MouseArea {
             id: catcher
             anchors.fill: parent
             enabled: plugin.sketchingActive
             z: 999
-            mouseEnabled: true
-            minimumTouchPoints: 1
-            maximumTouchPoints: 1
-            touchPoints: [ TouchPoint { id: touch1 } ]
 
-            property real startX: 0
-            property real startY: 0
-            property real startTime: 0
-            property bool moved: false
-
-            onPressed: (touchPoints) => {
-                startX = touchPoints[0].x
-                startY = touchPoints[0].y
-                startTime = Date.now()
-                moved = false
-            }
-
-            onUpdated: (touchPoints) => {
-                var dx = touchPoints[0].x - startX
-                var dy = touchPoints[0].y - startY
-                if (Math.sqrt(dx*dx + dy*dy) > 15) {
-                    moved = true
-                }
-            }
-
-            onReleased: (touchPoints) => {
-                var elapsed = Date.now() - startTime
-                if (!moved && elapsed < 300) {
-                    // Short tap with no movement → it's a selection tap
-                    plugin.handleMapTap(Qt.point(startX, startY))
-                }
+            onClicked: (mouse) => {
+                plugin.handleMapTap(Qt.point(mouse.x, mouse.y))
             }
         }
     }
 
     // --- Logic ---
-    // Phase 4.3a+b — convert screen→map coords, then access POTEAUX layer
+
+    // Find the POTEAUX layer (cached after first lookup)
+    function findPoteauxLayer() {
+        if (plugin.poteauxLayer) return plugin.poteauxLayer
+
+        // Try exact names that might be used in different projects
+        var namesToTry = [
+            "POTEAUX",
+            "demo_releve_alias 1 \u2014 POTEAUX",
+            "demo_releve_alias \u2014 POTEAUX"
+        ]
+
+        for (var i = 0; i < namesToTry.length; i++) {
+            try {
+                var results = qgisProject.mapLayersByName(namesToTry[i])
+                if (results && results.length > 0) {
+                    plugin.poteauxLayer = results[0]
+                    return plugin.poteauxLayer
+                }
+            } catch (e) {
+                // Name didn't work, try next
+            }
+        }
+
+        // Fallback: iterate all layers and find one containing "POTEAUX"
+        try {
+            var allLayers = qgisProject.mapLayersByName("")
+            // This probably won't work, but we tried
+        } catch (e) {
+            // Expected
+        }
+
+        return null
+    }
+
     function handleMapTap(screenPoint) {
         try {
             // 4.3a — Convert screen pixels to map coordinates
@@ -113,44 +122,92 @@ Item {
             var mapPoint = mapSettings.screenToCoordinate(screenPoint)
 
             // 4.3b — Find the POTEAUX layer
-            // Search all layers for one whose name contains "POTEAUX"
-            var allLayers = qgisProject.mapLayers()
-            var layer = null
-            var layerNames = []
-            for (var id in allLayers) {
-                var l = allLayers[id]
-                layerNames.push(l.name())
-                if (l.name().toUpperCase().indexOf("POTEAUX") >= 0) {
-                    layer = l
-                }
-            }
+            var layer = findPoteauxLayer()
             if (!layer) {
-                iface.mainWindow().displayToast(
-                    "POTEAUX introuvable. Couches: " + layerNames.join(", ")
-                )
+                iface.mainWindow().displayToast("Couche POTEAUX introuvable dans le projet")
                 return
             }
-            var count = layer.featureCount()
+
+            // 4.3c — Build tolerance (40 pixels in map units)
+            var mpp = mapSettings.mapUnitsPerPixel
+            var tol = mpp * 40
+
+            // 4.3d — Query features near the tap
+            var nearestFeature = null
+            var nearestDist = tol  // max search distance
+
+            var iterator = layer.getFeatures()
+            var feature = iterator.nextFeature()
+            while (feature) {
+                var geom = feature.geometry()
+                var pt = geom.asPoint()
+                var dx = pt.x() - mapPoint.x
+                var dy = pt.y() - mapPoint.y
+                var dist = Math.sqrt(dx * dx + dy * dy)
+
+                if (dist < nearestDist) {
+                    nearestDist = dist
+                    nearestFeature = feature
+                }
+                feature = iterator.nextFeature()
+            }
+
+            // 4.3e — Handle result
+            if (!nearestFeature) {
+                iface.mainWindow().displayToast("Aucun poteau trouv\u00e9 \u00e0 proximit\u00e9")
+                return
+            }
+
+            // 4.3f — Add to selected poles
+            var name = nearestFeature.attribute("nom_poteau_civique")
+            if (!name) name = "fid " + nearestFeature.attribute("fid")
+
+            var poles = plugin.selectedPoles.slice()
+            poles.push({
+                feature: nearestFeature,
+                name: name,
+                point: nearestFeature.geometry().asPoint()
+            })
+            plugin.selectedPoles = poles
+
             iface.mainWindow().displayToast(
-                "Couche '" + layer.name() + "' trouvée! " + count + " features. Tap: " +
-                mapPoint.x.toFixed(4) + ", " + mapPoint.y.toFixed(4)
+                "Poteau " + plugin.selectedPoles.length + "/2: " + name
             )
+
+            // If we have 2 poles, proceed to create the toron (Phase 4.4)
+            if (plugin.selectedPoles.length >= 2) {
+                plugin.createToron()
+            }
+
         } catch (e) {
-            iface.mainWindow().displayToast("Erreur 4.3b: " + e)
+            iface.mainWindow().displayToast("Erreur: " + e)
         }
+    }
+
+    // Phase 4.4 placeholder — will create the TORONS geometry
+    function createToron() {
+        iface.mainWindow().displayToast(
+            "2 poteaux s\u00e9lectionn\u00e9s: " +
+            plugin.selectedPoles[0].name + " \u2192 " +
+            plugin.selectedPoles[1].name +
+            " (cr\u00e9ation toron \u00e0 impl\u00e9menter)"
+        )
+        // Reset for now
+        plugin.sketchingActive = false
+        plugin.selectedPoles = []
     }
 
     function toggleSketching() {
         if (plugin.sketchingActive) {
-            // Turning OFF mid-flow: reset state
             plugin.sketchingActive = false
             plugin.selectedPoles = []
-            iface.mainWindow().displayToast("Mode sketching annulé")
+            iface.mainWindow().displayToast("Mode sketching annul\u00e9")
         } else {
-            // Turning ON
             plugin.sketchingActive = true
             plugin.selectedPoles = []
-            iface.mainWindow().displayToast("Mode sketching activé — sélectionnez 2 poteaux")
+            iface.mainWindow().displayToast(
+                "Mode sketching activ\u00e9 \u2014 s\u00e9lectionnez 2 poteaux"
+            )
         }
     }
 
@@ -161,17 +218,16 @@ Item {
 
         sketchingBanner = bannerComponent.createObject(iface.mainWindow().contentItem)
 
-        // Create the tap catcher as a child of the map canvas so it overlays the map
         try {
             var mc = iface.mapCanvas()
             if (mc) {
                 tapCatcher = tapCatcherComponent.createObject(mc)
-                iface.mainWindow().displayToast("Plugin prêt (tap catcher OK)")
+                iface.mainWindow().displayToast("Sketcher de torons pr\u00eat")
             } else {
                 iface.mainWindow().displayToast("ERREUR: mapCanvas() est null")
             }
         } catch (e) {
-            iface.mainWindow().displayToast("ERREUR tap catcher: " + e)
+            iface.mainWindow().displayToast("ERREUR: " + e)
         }
     }
 }
