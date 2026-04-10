@@ -69,9 +69,15 @@ Item {
             anchors.fill: parent
             enabled: plugin.sketchingActive
             z: 999
+            propagateComposedEvents: true
 
             onClicked: (mouse) => {
                 plugin.handleMapTap(Qt.point(mouse.x, mouse.y))
+                mouse.accepted = false
+            }
+
+            onPressed: (mouse) => {
+                mouse.accepted = false
             }
         }
     }
@@ -85,15 +91,26 @@ Item {
             var mapPoint = mapSettings.screenToCoordinate(screenPoint)
 
             // 4.3b — Find the POTEAUX layer
-            var layers = qgisProject.mapLayersByName("POTEAUX")
-            if (!layers || layers.length === 0) {
-                iface.mainWindow().displayToast("Erreur 4.3b: couche POTEAUX introuvable")
+            // Search all layers for one whose name contains "POTEAUX"
+            var allLayers = qgisProject.mapLayers()
+            var layer = null
+            var layerNames = []
+            for (var id in allLayers) {
+                var l = allLayers[id]
+                layerNames.push(l.name())
+                if (l.name().toUpperCase().indexOf("POTEAUX") >= 0) {
+                    layer = l
+                }
+            }
+            if (!layer) {
+                iface.mainWindow().displayToast(
+                    "POTEAUX introuvable. Couches: " + layerNames.join(", ")
+                )
                 return
             }
-            var layer = layers[0]
             var count = layer.featureCount()
             iface.mainWindow().displayToast(
-                "POTEAUX trouvé! " + count + " features. Tap: " +
+                "Couche '" + layer.name() + "' trouvée! " + count + " features. Tap: " +
                 mapPoint.x.toFixed(4) + ", " + mapPoint.y.toFixed(4)
             )
         } catch (e) {
