@@ -112,23 +112,35 @@ Item {
                 return
             }
 
-            // 4.3c — Diagnostic: test geometry + attribute access
+            // 4.3c — Diagnostic: find how to access geometry
             var testFeat = layer.getFeature(1)
-            var info = "fid=1: "
+            var info = ""
+
+            // Try 1: geometry as property (no parens)
             try {
-                var g = testFeat.geometry()
-                info += "geom=" + g + " | "
-                var p = g.asPoint()
-                info += "pt=" + p + " x=" + p.x + " y=" + p.y + " | "
-            } catch (ge) {
-                info += "geomErr=" + ge + " | "
-            }
+                var g1 = testFeat.geometry
+                info += "A:" + g1 + " "
+            } catch (e1) { info += "A:err " }
+
+            // Try 2: access geom attribute directly
             try {
-                var attr = testFeat.attribute("nom_poteau_civique")
-                info += "name=" + attr
-            } catch (ae) {
-                info += "attrErr=" + ae
+                var g2 = testFeat.attribute("geom")
+                info += "B:" + g2 + " "
+            } catch (e2) { info += "B:err " }
+
+            // Try 3: GeometryUtils
+            try {
+                var g3 = GeometryUtils.geometryFromFeature(testFeat)
+                info += "C:" + g3 + " "
+            } catch (e3) { info += "C:err " }
+
+            // Try 4: list feature properties
+            var fProps = []
+            for (var k in testFeat) {
+                fProps.push(k)
             }
+            info += "| props:" + fProps.join(",")
+
             iface.mainWindow().displayToast(info)
             return
 
