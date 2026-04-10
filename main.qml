@@ -112,18 +112,12 @@ Item {
                 return
             }
 
-            // 4.3c — Build tolerance rectangle (40 pixels in map units)
+            // 4.3c+d — Use a QGIS expression to select features near the tap
             var mpp = mapSettings.mapUnitsPerPixel
             var tol = mpp * 40
-            var rect = Qt.rect(
-                mapPoint.x - tol,
-                mapPoint.y - tol,
-                tol * 2,
-                tol * 2
-            )
-
-            // 4.3d — Use selectByRect to find features near the tap
-            layer.selectByRect(rect, 0)  // 0 = SetSelection
+            var expr = "distance($geometry, make_point(" +
+                       mapPoint.x + "," + mapPoint.y + ")) < " + tol
+            layer.selectByExpression(expr, 0)  // 0 = SetSelection
 
             var ids = layer.selectedFeatureIds()
             if (!ids || ids.length === 0) {
