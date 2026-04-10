@@ -133,23 +133,32 @@ Item {
             var tol = mpp * 40
 
             // 4.3d — Query features near the tap
+            // QField doesn't expose getFeatures() to QML.
+            // Try getFeature(fid) for each known feature instead.
             var nearestFeature = null
-            var nearestDist = tol  // max search distance
+            var nearestDist = tol
+            var nearestPoint = null
+            var count = layer.featureCount()
 
-            var iterator = layer.getFeatures()
-            var feature = iterator.nextFeature()
-            while (feature) {
-                var geom = feature.geometry()
-                var pt = geom.asPoint()
-                var dx = pt.x() - mapPoint.x
-                var dy = pt.y() - mapPoint.y
-                var dist = Math.sqrt(dx * dx + dy * dy)
+            for (var fid = 1; fid <= count + 10; fid++) {
+                try {
+                    var feat = layer.getFeature(fid)
+                    if (!feat || !feat.isValid()) continue
 
-                if (dist < nearestDist) {
-                    nearestDist = dist
-                    nearestFeature = feature
+                    var geom = feat.geometry()
+                    var pt = geom.asPoint()
+                    var dx = pt.x - mapPoint.x
+                    var dy = pt.y - mapPoint.y
+                    var dist = Math.sqrt(dx * dx + dy * dy)
+
+                    if (dist < nearestDist) {
+                        nearestDist = dist
+                        nearestFeature = feat
+                        nearestPoint = pt
+                    }
+                } catch (innerErr) {
+                    // fid doesn't exist, skip
                 }
-                feature = iterator.nextFeature()
             }
 
             // 4.3e — Handle result
@@ -160,13 +169,14 @@ Item {
 
             // 4.3f — Add to selected poles
             var name = nearestFeature.attribute("nom_poteau_civique")
-            if (!name) name = "fid " + nearestFeature.attribute("fid")
+            if (!name) name = "fid " + nearestFeature.id()
 
             var poles = plugin.selectedPoles.slice()
             poles.push({
-                feature: nearestFeature,
+                fid: nearestFeature.id(),
                 name: name,
-                point: nearestFeature.geometry().asPoint()
+                x: nearestPoint.x,
+                y: nearestPoint.y
             })
             plugin.selectedPoles = poles
 
