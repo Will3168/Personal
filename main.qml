@@ -75,8 +75,8 @@ Item {
             enabled: plugin.sketchingActive
             z: 999
 
-            onClicked: (mouse) => {
-                plugin.handleMapTap(Qt.point(mouse.x, mouse.y))
+            onClicked: {
+                plugin.handleMapTap(Qt.point(mouseX, mouseY))
             }
         }
     }
@@ -128,13 +128,12 @@ Item {
             var nearestX = 0
             var nearestY = 0
             var nearestName = ""
-            var debugInfo = "tap=" + tapX.toFixed(2) + "," + tapY.toFixed(2) + " | "
+            var debugInfo = "tap=" + tapX.toFixed(4) + "," + tapY.toFixed(4) + " | "
             var featsFound = 0
             var coordsFound = 0
 
             for (var fid = 1; fid <= 20; fid++) {
                 var feat = layer.getFeature(fid)
-                // Skip null/undefined but do NOT check .valid — it may not exist in QField QML
                 if (!feat) continue
 
                 // Check if feature has data by trying to read an attribute
@@ -142,21 +141,49 @@ Item {
                 if (testAttr === undefined && feat.attribute("fid") === undefined) continue
 
                 featsFound++
-                exprEval.feature = feat
 
-                var fx = exprEval.evaluate("x($geometry)")
-                var fy = exprEval.evaluate("y($geometry)")
+                // Try multiple approaches to get coordinates
+                var fx = null
+                var fy = null
 
-                // Log first feature's coordinates for debugging
-                if (featsFound === 1) {
-                    debugInfo += "fid" + fid + ":x=" + fx + ",y=" + fy + " "
+                // Approach A: set expression property, then evaluate() with no args
+                try {
+                    exprEval.feature = feat
+                    exprEval.expression = "x($geometry)"
+                    fx = exprEval.evaluate()
+                    exprEval.expression = "y($geometry)"
+                    fy = exprEval.evaluate()
+                } catch(e) {}
+
+                // Approach B: if A returned empty, try $x and $y variables
+                if (fx === null || fx === undefined || fx === "") {
+                    try {
+                        exprEval.feature = feat
+                        exprEval.expression = "$x"
+                        fx = exprEval.evaluate()
+                        exprEval.expression = "$y"
+                        fy = exprEval.evaluate()
+                    } catch(e) {}
                 }
 
-                // Try parsing as number in case evaluate returns string
+                // Approach C: try geometry property directly (point geometry has x, y)
+                if (fx === null || fx === undefined || fx === "") {
+                    try {
+                        var geom = feat.geometry
+                        fx = geom.x
+                        fy = geom.y
+                    } catch(e) {}
+                }
+
+                // Log first feature for debugging
+                if (featsFound === 1) {
+                    debugInfo += "f" + fid + ":" + fx + "," + fy + " "
+                }
+
                 fx = Number(fx)
                 fy = Number(fy)
 
-                if (isNaN(fx) || isNaN(fy)) continue
+                if (isNaN(fx) || fx === 0) continue
 
                 coordsFound++
                 var dx = fx - tapX
@@ -174,14 +201,13 @@ Item {
 
             debugInfo += "feats=" + featsFound + " coords=" + coordsFound
             if (nearestFid >= 0) {
-                debugInfo += " best=" + nearestName + " dist=" + nearestDist.toFixed(4)
+                debugInfo += " best=" + nearestName + " d=" + nearestDist.toFixed(6)
             }
             iface.mainWindow().displayToast(debugInfo)
 
-            // Tolerance: 5 meters (assumes projected CRS in meters)
-            var tolerance = 5
+            // Tolerance: 5 meters ≈ 0.000045 degrees at ~46° latitude
+            var tolerance = 0.000045
             if (nearestFid < 0 || nearestDist > tolerance) {
-                // Don't show second toast — debug toast above is enough for now
                 return
             }
 
