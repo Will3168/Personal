@@ -112,9 +112,6 @@ Item {
             var tapX = mapPoint.x
             var tapY = mapPoint.y
 
-            // Debug: show tap coordinates
-            iface.mainWindow().displayToast("Tap: " + tapX.toFixed(6) + ", " + tapY.toFixed(6))
-
             // 4.3b — Find the POTEAUX layer
             var layer = findPoteauxLayer()
             if (!layer) {
@@ -122,9 +119,8 @@ Item {
                 return
             }
 
-            // 4.3c — Find nearest pole using ExpressionEvaluator
-            // Loop through fids 1-20 (fids may not be sequential)
-            // Use expression evaluation to get x/y since feature.geometry() is NOT exposed to QML
+            // 4.3c — Find nearest pole
+            // Diagnostic pass: check what getFeature returns and what ExpressionEvaluator gives us
             exprEval.layer = layer
 
             var nearestFid = -1
@@ -132,19 +128,37 @@ Item {
             var nearestX = 0
             var nearestY = 0
             var nearestName = ""
-            var validCount = 0
+            var debugInfo = "tap=" + tapX.toFixed(2) + "," + tapY.toFixed(2) + " | "
+            var featsFound = 0
+            var coordsFound = 0
 
             for (var fid = 1; fid <= 20; fid++) {
                 var feat = layer.getFeature(fid)
-                if (!feat || !feat.valid) continue
+                // Skip null/undefined but do NOT check .valid — it may not exist in QField QML
+                if (!feat) continue
 
-                validCount++
+                // Check if feature has data by trying to read an attribute
+                var testAttr = feat.attribute("nom_poteau_civique")
+                if (testAttr === undefined && feat.attribute("fid") === undefined) continue
+
+                featsFound++
                 exprEval.feature = feat
+
                 var fx = exprEval.evaluate("x($geometry)")
                 var fy = exprEval.evaluate("y($geometry)")
 
-                if (fx === null || fy === null || isNaN(fx) || isNaN(fy)) continue
+                // Log first feature's coordinates for debugging
+                if (featsFound === 1) {
+                    debugInfo += "fid" + fid + ":x=" + fx + ",y=" + fy + " "
+                }
 
+                // Try parsing as number in case evaluate returns string
+                fx = Number(fx)
+                fy = Number(fy)
+
+                if (isNaN(fx) || isNaN(fy)) continue
+
+                coordsFound++
                 var dx = fx - tapX
                 var dy = fy - tapY
                 var dist = Math.sqrt(dx * dx + dy * dy)
@@ -158,19 +172,16 @@ Item {
                 }
             }
 
-            // Debug: show what we found
-            iface.mainWindow().displayToast(
-                "Found " + validCount + " poles | nearest fid=" + nearestFid +
-                " dist=" + nearestDist.toFixed(2) +
-                " pole@(" + nearestX.toFixed(6) + "," + nearestY.toFixed(6) + ")"
-            )
+            debugInfo += "feats=" + featsFound + " coords=" + coordsFound
+            if (nearestFid >= 0) {
+                debugInfo += " best=" + nearestName + " dist=" + nearestDist.toFixed(4)
+            }
+            iface.mainWindow().displayToast(debugInfo)
 
-            // Tolerance: 5 meters
+            // Tolerance: 5 meters (assumes projected CRS in meters)
             var tolerance = 5
-            if (nearestDist > tolerance) {
-                iface.mainWindow().displayToast(
-                    "Aucun poteau trouvé à proximité (dist=" + nearestDist.toFixed(2) + ")"
-                )
+            if (nearestFid < 0 || nearestDist > tolerance) {
+                // Don't show second toast — debug toast above is enough for now
                 return
             }
 
