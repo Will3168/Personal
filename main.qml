@@ -19,6 +19,11 @@ Item {
     property var sketchingBanner: null
     property var tapCatcher: null
 
+    // --- Expression evaluator for geometry access ---
+    ExpressionEvaluator {
+        id: exprEval
+    }
+
     // --- Toolbar button ---
     Component {
         id: buttonComponent
@@ -104,6 +109,8 @@ Item {
             // 4.3a — Convert screen pixels to map coordinates
             var mapSettings = iface.mapCanvas().mapSettings
             var mapPoint = mapSettings.screenToCoordinate(screenPoint)
+            var tapX = mapPoint.x
+            var tapY = mapPoint.y
 
             // 4.3b — Find the POTEAUX layer
             var layer = findPoteauxLayer()
@@ -112,51 +119,66 @@ Item {
                 return
             }
 
-            // 4.3c — Diagnostic: find how to access geometry
-            var testFeat = layer.getFeature(1)
-            var info = ""
+            // 4.3c — Find nearest pole using ExpressionEvaluator
+            // Loop through fids 1-20 (fids may not be sequential)
+            // Use expression evaluation to get x/y since feature.geometry() is NOT exposed to QML
+            exprEval.layer = layer
 
-            // Try 1: geometry as property (no parens)
-            try {
-                var g1 = testFeat.geometry
-                info += "A:" + g1 + " "
-            } catch (e1) { info += "A:err " }
+            var nearestFid = -1
+            var nearestDist = Infinity
+            var nearestX = 0
+            var nearestY = 0
+            var nearestName = ""
 
-            // Try 2: access geom attribute directly
-            try {
-                var g2 = testFeat.attribute("geom")
-                info += "B:" + g2 + " "
-            } catch (e2) { info += "B:err " }
+            for (var fid = 1; fid <= 20; fid++) {
+                var feat = layer.getFeature(fid)
+                if (!feat || !feat.valid) continue
 
-            // Try 3: GeometryUtils
-            try {
-                var g3 = GeometryUtils.geometryFromFeature(testFeat)
-                info += "C:" + g3 + " "
-            } catch (e3) { info += "C:err " }
+                exprEval.feature = feat
+                var fx = exprEval.evaluate("x($geometry)")
+                var fy = exprEval.evaluate("y($geometry)")
 
-            // Try 4: list feature properties
-            var fProps = []
-            for (var k in testFeat) {
-                fProps.push(k)
+                if (fx === null || fy === null || isNaN(fx) || isNaN(fy)) continue
+
+                var dx = fx - tapX
+                var dy = fy - tapY
+                var dist = Math.sqrt(dx * dx + dy * dy)
+
+                if (dist < nearestDist) {
+                    nearestDist = dist
+                    nearestFid = fid
+                    nearestX = fx
+                    nearestY = fy
+                    nearestName = feat.attribute("nom_poteau_civique") || ("fid=" + fid)
+                }
             }
-            info += "| props:" + fProps.join(",")
 
-            iface.mainWindow().displayToast(info)
-            return
+            // Tolerance in map units — adjust based on your CRS
+            // For projected CRS (meters): ~20m is reasonable for finger taps
+            // For geographic CRS (degrees): ~0.0002 is roughly 20m
+            var tolerance = 0.0002
+            if (nearestDist > tolerance) {
+                iface.mainWindow().displayToast("Aucun poteau trouvé à proximité")
+                return
+            }
 
-            var name = "test"
+            // Check not selecting same pole twice
+            if (plugin.selectedPoles.length === 1 && plugin.selectedPoles[0].fid === nearestFid) {
+                iface.mainWindow().displayToast("Même poteau — choisissez un autre")
+                return
+            }
 
             var poles = plugin.selectedPoles.slice()
             poles.push({
-                fid: nearestId,
-                name: "" + name,
+                fid: nearestFid,
+                name: "" + nearestName,
                 x: nearestX,
                 y: nearestY
             })
             plugin.selectedPoles = poles
 
             iface.mainWindow().displayToast(
-                "Poteau " + plugin.selectedPoles.length + "/2: " + name
+                "Poteau " + plugin.selectedPoles.length + "/2: " + nearestName
             )
 
             // If we have 2 poles, create the toron
