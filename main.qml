@@ -112,6 +112,9 @@ Item {
             var tapX = mapPoint.x
             var tapY = mapPoint.y
 
+            // Debug: show tap coordinates
+            iface.mainWindow().displayToast("Tap: " + tapX.toFixed(6) + ", " + tapY.toFixed(6))
+
             // 4.3b — Find the POTEAUX layer
             var layer = findPoteauxLayer()
             if (!layer) {
@@ -129,11 +132,13 @@ Item {
             var nearestX = 0
             var nearestY = 0
             var nearestName = ""
+            var validCount = 0
 
             for (var fid = 1; fid <= 20; fid++) {
                 var feat = layer.getFeature(fid)
                 if (!feat || !feat.valid) continue
 
+                validCount++
                 exprEval.feature = feat
                 var fx = exprEval.evaluate("x($geometry)")
                 var fy = exprEval.evaluate("y($geometry)")
@@ -153,12 +158,19 @@ Item {
                 }
             }
 
-            // Tolerance in map units — adjust based on your CRS
-            // For projected CRS (meters): ~20m is reasonable for finger taps
-            // For geographic CRS (degrees): ~0.0002 is roughly 20m
-            var tolerance = 0.0002
+            // Debug: show what we found
+            iface.mainWindow().displayToast(
+                "Found " + validCount + " poles | nearest fid=" + nearestFid +
+                " dist=" + nearestDist.toFixed(2) +
+                " pole@(" + nearestX.toFixed(6) + "," + nearestY.toFixed(6) + ")"
+            )
+
+            // Tolerance: 5 meters
+            var tolerance = 5
             if (nearestDist > tolerance) {
-                iface.mainWindow().displayToast("Aucun poteau trouvé à proximité")
+                iface.mainWindow().displayToast(
+                    "Aucun poteau trouvé à proximité (dist=" + nearestDist.toFixed(2) + ")"
+                )
                 return
             }
 
