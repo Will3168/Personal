@@ -105,19 +105,23 @@ Item {
     }
 
     function handleMapTap(screenPoint) {
+        console.log("[toron_sketcher] handleMapTap screenPoint=", screenPoint.x, screenPoint.y)
         try {
             // 4.3a — Convert screen pixels to map coordinates
             var mapSettings = iface.mapCanvas().mapSettings
             var mapPoint = mapSettings.screenToCoordinate(screenPoint)
             var tapX = mapPoint.x
             var tapY = mapPoint.y
+            console.log("[toron_sketcher] tap mapCoord=", tapX, tapY)
 
             // 4.3b — Find the POTEAUX layer
             var layer = findPoteauxLayer()
             if (!layer) {
+                console.warn("[toron_sketcher] POTEAUX layer not found")
                 iface.mainWindow().displayToast("Couche POTEAUX introuvable")
                 return
             }
+            console.log("[toron_sketcher] layer found:", layer.name)
 
             // 4.3c — Find nearest pole
             // Diagnostic pass: check what getFeature returns and what ExpressionEvaluator gives us
@@ -196,7 +200,8 @@ Item {
             }
 
         } catch (e) {
-            iface.mainWindow().displayToast("Erreur: " + e)
+            console.error("[toron_sketcher] handleMapTap failed:", e.message, e.stack)
+            try { iface.mainWindow().displayToast("Erreur: " + e) } catch (e2) {}
         }
     }
 
@@ -213,36 +218,67 @@ Item {
     }
 
     function toggleSketching() {
-        if (plugin.sketchingActive) {
-            plugin.sketchingActive = false
-            plugin.selectedPoles = []
-            iface.mainWindow().displayToast("Mode sketching annul\u00e9")
-        } else {
-            plugin.sketchingActive = true
-            plugin.selectedPoles = []
-            iface.mainWindow().displayToast(
-                "Mode sketching activ\u00e9 \u2014 s\u00e9lectionnez 2 poteaux"
-            )
+        console.log("[toron_sketcher] toggleSketching called, currently active=", plugin.sketchingActive)
+        try {
+            if (plugin.sketchingActive) {
+                plugin.sketchingActive = false
+                plugin.selectedPoles = []
+                iface.mainWindow().displayToast("Mode sketching annul\u00e9")
+            } else {
+                plugin.sketchingActive = true
+                plugin.selectedPoles = []
+                iface.mainWindow().displayToast(
+                    "Mode sketching activ\u00e9 \u2014 s\u00e9lectionnez 2 poteaux"
+                )
+            }
+        } catch (e) {
+            console.error("[toron_sketcher] toggleSketching failed:", e.message, e.stack)
         }
     }
 
     // --- Plugin load ---
     Component.onCompleted: {
-        toolbarButton = buttonComponent.createObject(null)
-        iface.addItemToPluginsToolbar(toolbarButton)
+        console.log("[toron_sketcher] Component.onCompleted starting")
 
-        sketchingBanner = bannerComponent.createObject(iface.mainWindow().contentItem)
+        try {
+            toolbarButton = buttonComponent.createObject(null)
+            if (!toolbarButton) {
+                console.error("[toron_sketcher] buttonComponent.createObject returned null")
+            } else {
+                console.log("[toron_sketcher] toolbarButton created")
+            }
+            iface.addItemToPluginsToolbar(toolbarButton)
+            console.log("[toron_sketcher] toolbar button added")
+        } catch (e) {
+            console.error("[toron_sketcher] toolbar setup failed:", e.message, e.stack)
+        }
+
+        try {
+            sketchingBanner = bannerComponent.createObject(iface.mainWindow().contentItem)
+            if (!sketchingBanner) {
+                console.warn("[toron_sketcher] sketchingBanner is null after createObject")
+            } else {
+                console.log("[toron_sketcher] sketching banner created")
+            }
+        } catch (e) {
+            console.error("[toron_sketcher] banner setup failed:", e.message, e.stack)
+        }
 
         try {
             var mc = iface.mapCanvas()
             if (mc) {
                 tapCatcher = tapCatcherComponent.createObject(mc)
+                console.log("[toron_sketcher] tap catcher installed on map canvas")
                 iface.mainWindow().displayToast("Sketcher de torons pr\u00eat")
             } else {
+                console.error("[toron_sketcher] iface.mapCanvas() returned null")
                 iface.mainWindow().displayToast("ERREUR: mapCanvas() est null")
             }
         } catch (e) {
-            iface.mainWindow().displayToast("ERREUR: " + e)
+            console.error("[toron_sketcher] map canvas setup failed:", e.message, e.stack)
+            try { iface.mainWindow().displayToast("ERREUR: " + e) } catch (e2) {}
         }
+
+        console.log("[toron_sketcher] Component.onCompleted finished")
     }
 }
