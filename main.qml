@@ -123,91 +123,60 @@ Item {
             // Diagnostic pass: check what getFeature returns and what ExpressionEvaluator gives us
             exprEval.layer = layer
 
-            var nearestFid = -1
-            var nearestDist = Infinity
-            var nearestX = 0
-            var nearestY = 0
-            var nearestName = ""
-            var debugInfo = "tap=" + tapX.toFixed(4) + "," + tapY.toFixed(4) + " | "
-            var featsFound = 0
-            var coordsFound = 0
-
-            for (var fid = 1; fid <= 20; fid++) {
-                var feat = layer.getFeature(fid)
-                if (!feat) continue
-
-                // Check if feature has data by trying to read an attribute
-                var testAttr = feat.attribute("nom_poteau_civique")
-                if (testAttr === undefined && feat.attribute("fid") === undefined) continue
-
-                featsFound++
-
-                // Try multiple approaches to get coordinates
-                var fx = null
-                var fy = null
-
-                // Approach A: set expression property, then evaluate() with no args
-                try {
-                    exprEval.feature = feat
-                    exprEval.expression = "x($geometry)"
-                    fx = exprEval.evaluate()
-                    exprEval.expression = "y($geometry)"
-                    fy = exprEval.evaluate()
-                } catch(e) {}
-
-                // Approach B: if A returned empty, try $x and $y variables
-                if (fx === null || fx === undefined || fx === "") {
-                    try {
-                        exprEval.feature = feat
-                        exprEval.expression = "$x"
-                        fx = exprEval.evaluate()
-                        exprEval.expression = "$y"
-                        fy = exprEval.evaluate()
-                    } catch(e) {}
-                }
-
-                // Approach C: try geometry property directly (point geometry has x, y)
-                if (fx === null || fx === undefined || fx === "") {
-                    try {
-                        var geom = feat.geometry
-                        fx = geom.x
-                        fy = geom.y
-                    } catch(e) {}
-                }
-
-                // Log first feature for debugging
-                if (featsFound === 1) {
-                    debugInfo += "f" + fid + ":" + fx + "," + fy + " "
-                }
-
-                fx = Number(fx)
-                fy = Number(fy)
-
-                if (isNaN(fx) || fx === 0) continue
-
-                coordsFound++
-                var dx = fx - tapX
-                var dy = fy - tapY
-                var dist = Math.sqrt(dx * dx + dy * dy)
-
-                if (dist < nearestDist) {
-                    nearestDist = dist
-                    nearestFid = fid
-                    nearestX = fx
-                    nearestY = fy
-                    nearestName = feat.attribute("nom_poteau_civique") || ("fid=" + fid)
-                }
-            }
-
-            debugInfo += "feats=" + featsFound + " coords=" + coordsFound
-            if (nearestFid >= 0) {
-                debugInfo += " best=" + nearestName + " d=" + nearestDist.toFixed(6)
-            }
-            iface.mainWindow().displayToast(debugInfo)
-
+            // NEW STRATEGY: use layer.selectByExpression() with distance filter.
+            // The expression runs on C++ side where geometry IS accessible.
             // Tolerance: 5 meters ≈ 0.000045 degrees at ~46° latitude
             var tolerance = 0.000045
-            if (nearestFid < 0 || nearestDist > tolerance) {
+            var expr = "distance($geometry, make_point(" + tapX + "," + tapY + ")) < " + tolerance
+
+            var selectResult = "?"
+            try {
+                layer.selectByExpression(expr)
+                selectResult = "ok"
+            } catch(e) {
+                selectResult = "err:" + e
+            }
+
+            // Try multiple ways to read selection
+            var selCount = "?"
+            try { selCount = layer.selectedFeatureCount() } catch(e) {}
+            if (selCount === "?") { try { selCount = layer.selectedFeatureCount } catch(e) {} }
+
+            var selIdsStr = "?"
+            var selIds = null
+            try {
+                var r = layer.selectedFeatureIds()
+                selIds = r
+                selIdsStr = JSON.stringify(r)
+            } catch(e) { selIdsStr = "err:" + e }
+            if (selIds === null || selIds === undefined) {
+                try {
+                    selIds = layer.selectedFeatureIds
+                    selIdsStr = JSON.stringify(selIds)
+                } catch(e) {}
+            }
+
+            iface.mainWindow().displayToast(
+                "tap=" + tapX.toFixed(4) + "," + tapY.toFixed(4) +
+                " | sel=" + selectResult +
+                " count=" + selCount +
+                " ids=" + selIdsStr
+            )
+
+            // If we got an array of IDs, pick the first
+            var nearestFid = -1
+            var nearestName = ""
+            var nearestX = tapX
+            var nearestY = tapY
+            if (selIds && selIds.length > 0) {
+                nearestFid = selIds[0]
+                var feat = layer.getFeature(nearestFid)
+                if (feat) {
+                    nearestName = feat.attribute("nom_poteau_civique") || ("fid=" + nearestFid)
+                }
+            }
+
+            if (nearestFid < 0) {
                 return
             }
 
