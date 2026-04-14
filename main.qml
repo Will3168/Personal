@@ -123,62 +123,51 @@ Item {
             // Diagnostic pass: check what getFeature returns and what ExpressionEvaluator gives us
             exprEval.layer = layer
 
-            // NEW STRATEGY: use layer.selectByExpression() with distance filter.
-            // The expression runs on C++ side where geometry IS accessible.
+            // STRATEGY: use QGIS aggregate() expression.
+            // It runs on C++ side with full geometry access, returns a single fid.
             // Tolerance: 5 meters ≈ 0.000045 degrees at ~46° latitude
             var tolerance = 0.000045
-            var expr = "distance($geometry, make_point(" + tapX + "," + tapY + ")) < " + tolerance
+            var layerName = layer.name
+            var filterExpr = "distance($geometry, make_point(" + tapX + "," + tapY + ")) < " + tolerance
 
-            var selectResult = "?"
+            // aggregate() returns the min fid of features matching the filter
+            // Escape the inner filter string for the outer expression
+            var aggExpr = "aggregate(layer:='" + layerName + "', aggregate:='min', expression:=\"$id\", filter:=\"" + filterExpr + "\")"
+
+            var nearestFid = -1
+            var aggResult = "?"
             try {
-                layer.selectByExpression(expr)
-                selectResult = "ok"
+                exprEval.layer = layer
+                exprEval.expression = aggExpr
+                aggResult = exprEval.evaluate()
+                var n = Number(aggResult)
+                if (!isNaN(n) && n > 0) {
+                    nearestFid = n
+                }
             } catch(e) {
-                selectResult = "err:" + e
-            }
-
-            // Try multiple ways to read selection
-            var selCount = "?"
-            try { selCount = layer.selectedFeatureCount() } catch(e) {}
-            if (selCount === "?") { try { selCount = layer.selectedFeatureCount } catch(e) {} }
-
-            var selIdsStr = "?"
-            var selIds = null
-            try {
-                var r = layer.selectedFeatureIds()
-                selIds = r
-                selIdsStr = JSON.stringify(r)
-            } catch(e) { selIdsStr = "err:" + e }
-            if (selIds === null || selIds === undefined) {
-                try {
-                    selIds = layer.selectedFeatureIds
-                    selIdsStr = JSON.stringify(selIds)
-                } catch(e) {}
+                aggResult = "err:" + e
             }
 
             iface.mainWindow().displayToast(
                 "tap=" + tapX.toFixed(4) + "," + tapY.toFixed(4) +
-                " | sel=" + selectResult +
-                " count=" + selCount +
-                " ids=" + selIdsStr
+                " | agg=" + aggResult +
+                " fid=" + nearestFid
             )
-
-            // If we got an array of IDs, pick the first
-            var nearestFid = -1
-            var nearestName = ""
-            var nearestX = tapX
-            var nearestY = tapY
-            if (selIds && selIds.length > 0) {
-                nearestFid = selIds[0]
-                var feat = layer.getFeature(nearestFid)
-                if (feat) {
-                    nearestName = feat.attribute("nom_poteau_civique") || ("fid=" + nearestFid)
-                }
-            }
 
             if (nearestFid < 0) {
                 return
             }
+
+            // Get the pole name for the selected feature
+            var nearestName = ""
+            var feat = layer.getFeature(nearestFid)
+            if (feat) {
+                nearestName = feat.attribute("nom_poteau_civique") || ("fid=" + nearestFid)
+            }
+
+            // Placeholders (we can fetch real x/y later when building geometry)
+            var nearestX = tapX
+            var nearestY = tapY
 
             // Check not selecting same pole twice
             if (plugin.selectedPoles.length === 1 && plugin.selectedPoles[0].fid === nearestFid) {
