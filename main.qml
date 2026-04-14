@@ -123,23 +123,24 @@ Item {
             // Diagnostic pass: check what getFeature returns and what ExpressionEvaluator gives us
             exprEval.layer = layer
 
-            // STRATEGY: use QGIS aggregate() expression.
-            // It runs on C++ side with full geometry access, returns a single fid.
+            // STRATEGY: use QGIS aggregate() expression passed to evaluate().
+            // Runs on C++ side with full geometry access, returns a single fid.
             // Tolerance: 5 meters ≈ 0.000045 degrees at ~46° latitude
             var tolerance = 0.000045
             var layerName = layer.name
             var filterExpr = "distance($geometry, make_point(" + tapX + "," + tapY + ")) < " + tolerance
 
-            // aggregate() returns the min fid of features matching the filter
-            // Escape the inner filter string for the outer expression
-            var aggExpr = "aggregate(layer:='" + layerName + "', aggregate:='min', expression:=\"$id\", filter:=\"" + filterExpr + "\")"
+            // aggregate() returns the min fid of features matching the filter.
+            // Note: inside aggregate(), the sub-expression is a string — use single quotes.
+            var aggExpr = "aggregate(layer:='" + layerName +
+                          "', aggregate:='min', expression:='$id', filter:='" +
+                          filterExpr + "')"
 
             var nearestFid = -1
             var aggResult = "?"
             try {
                 exprEval.layer = layer
-                exprEval.expression = aggExpr
-                aggResult = exprEval.evaluate()
+                aggResult = exprEval.evaluate(aggExpr)
                 var n = Number(aggResult)
                 if (!isNaN(n) && n > 0) {
                     nearestFid = n
@@ -150,6 +151,7 @@ Item {
 
             iface.mainWindow().displayToast(
                 "tap=" + tapX.toFixed(4) + "," + tapY.toFixed(4) +
+                " | layer='" + layerName + "'" +
                 " | agg=" + aggResult +
                 " fid=" + nearestFid
             )
