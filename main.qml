@@ -176,21 +176,25 @@ Item {
             }
 
             var bestDist = Math.sqrt(bestDistSq)
+            var distStr = isFinite(bestDist) ? bestDist.toFixed(6) : "inf"
             console.log("[toron_sketcher] scan scanned=" + scanned +
                         " withGeom=" + withGeom +
                         " nearestFid=" + nearestFid +
                         " bestDist=" + bestDist)
 
-            iface.mainWindow().displayToast(
-                "scan " + withGeom + "/" + scanned +
-                " best=" + nearestFid +
-                " d=" + (isFinite(bestDist) ? bestDist.toFixed(6) : "inf")
-            )
-
             if (nearestFid < 0 || bestDist > tolerance) {
-                iface.mainWindow().displayToast("Aucun poteau trouvé à proximité")
+                iface.mainWindow().displayToast(
+                    "Aucun poteau — scan " + withGeom + "/" + scanned +
+                    " best=" + nearestFid + " d=" + distStr +
+                    " tol=" + tolerance
+                )
                 return
             }
+
+            iface.mainWindow().displayToast(
+                "scan " + withGeom + "/" + scanned +
+                " best=" + nearestFid + " d=" + distStr
+            )
 
             // Get the pole name for the selected feature
             var nearestName = ""
