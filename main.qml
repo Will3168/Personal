@@ -123,44 +123,72 @@ Item {
             }
             console.log("[toron_sketcher] layer found:", layer.name)
 
-            // 4.3c — Find nearest pole
-            // Diagnostic pass: check what getFeature returns and what ExpressionEvaluator gives us
+            // 4.3c — Find nearest pole by iterating features directly.
+            // Tolerance: 5 m ≈ 0.000045° at ~46° latitude (degrees CRS).
             exprEval.layer = layer
-
-            // STRATEGY: use QGIS aggregate() expression passed to evaluate().
-            // Runs on C++ side with full geometry access, returns a single fid.
-            // Tolerance: 5 meters ≈ 0.000045 degrees at ~46° latitude
             var tolerance = 0.000045
-            var layerName = layer.name
-            var filterExpr = "distance($geometry, make_point(" + tapX + "," + tapY + ")) < " + tolerance
-
-            // aggregate() returns the min fid of features matching the filter.
-            // Note: inside aggregate(), the sub-expression is a string — use single quotes.
-            var aggExpr = "aggregate(layer:='" + layerName +
-                          "', aggregate:='min', expression:='$id', filter:='" +
-                          filterExpr + "')"
 
             var nearestFid = -1
-            var aggResult = "?"
-            try {
-                exprEval.layer = layer
-                aggResult = exprEval.evaluate(aggExpr)
-                var n = Number(aggResult)
-                if (!isNaN(n) && n > 0) {
-                    nearestFid = n
+            var bestDistSq = Infinity
+            var scanned = 0
+            var withGeom = 0
+
+            for (var fid = 1; fid <= 5000; fid++) {
+                var feat = layer.getFeature(fid)
+                if (!feat) continue
+                scanned++
+
+                var px = NaN, py = NaN
+
+                // Path A: direct geometry access (if exposed by the QML binding)
+                try {
+                    var g = feat.geometry
+                    if (g) {
+                        if (typeof g.x !== "undefined" && typeof g.y !== "undefined") {
+                            px = Number(g.x); py = Number(g.y)
+                        } else if (typeof g.asPoint === "function") {
+                            var pt = g.asPoint()
+                            if (pt) { px = Number(pt.x); py = Number(pt.y) }
+                        }
+                    }
+                } catch (e) {}
+
+                // Path B: per-feature expression fallback
+                if (isNaN(px) || isNaN(py)) {
+                    try {
+                        exprEval.feature = feat
+                        px = Number(exprEval.evaluate("x($geometry)"))
+                        py = Number(exprEval.evaluate("y($geometry)"))
+                    } catch (e) {}
                 }
-            } catch(e) {
-                aggResult = "err:" + e
+
+                if (isNaN(px) || isNaN(py)) continue
+                withGeom++
+
+                var dx = px - tapX
+                var dy = py - tapY
+                var dsq = dx * dx + dy * dy
+
+                if (dsq < bestDistSq) {
+                    bestDistSq = dsq
+                    nearestFid = fid
+                }
             }
 
+            var bestDist = Math.sqrt(bestDistSq)
+            console.log("[toron_sketcher] scan scanned=" + scanned +
+                        " withGeom=" + withGeom +
+                        " nearestFid=" + nearestFid +
+                        " bestDist=" + bestDist)
+
             iface.mainWindow().displayToast(
-                "tap=" + tapX.toFixed(4) + "," + tapY.toFixed(4) +
-                " | layer='" + layerName + "'" +
-                " | agg=" + aggResult +
-                " fid=" + nearestFid
+                "scan " + withGeom + "/" + scanned +
+                " best=" + nearestFid +
+                " d=" + (isFinite(bestDist) ? bestDist.toFixed(6) : "inf")
             )
 
-            if (nearestFid < 0) {
+            if (nearestFid < 0 || bestDist > tolerance) {
+                iface.mainWindow().displayToast("Aucun poteau trouvé à proximité")
                 return
             }
 
