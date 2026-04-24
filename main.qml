@@ -11,8 +11,12 @@ Item {
     property bool sketchingActive: false
     property var selectedPoles: []
 
-    // --- Cached layer reference ---
+    // --- Cached layer references ---
     property var poteauxLayer: null
+    property var toronsLayer: null
+
+    // --- QField's built-in attribute form drawer (looked up at load time) ---
+    property var overlayFeatureFormDrawer: null
 
     // --- References to objects created at runtime ---
     property var toolbarButton: null
@@ -104,6 +108,27 @@ Item {
         return null
     }
 
+    function findToronsLayer() {
+        if (plugin.toronsLayer) return plugin.toronsLayer
+
+        var namesToTry = [
+            "TORONS",
+            "demo_releve_alias 1 \u2014 TORONS",
+            "demo_releve_alias \u2014 TORONS"
+        ]
+
+        for (var i = 0; i < namesToTry.length; i++) {
+            try {
+                var results = qgisProject.mapLayersByName(namesToTry[i])
+                if (results && results.length > 0) {
+                    plugin.toronsLayer = results[0]
+                    return plugin.toronsLayer
+                }
+            } catch (e) {}
+        }
+        return null
+    }
+
     function handleMapTap(screenPoint) {
         console.log("[toron_sketcher] handleMapTap screenPoint=", screenPoint.x, screenPoint.y)
         try {
@@ -123,77 +148,78 @@ Item {
             }
             console.log("[toron_sketcher] layer found:", layer.name)
 
-            // 4.3c — Find nearest pole by iterating features directly.
-            // Tolerance: 5 m ≈ 0.000045° at ~46° latitude (degrees CRS).
+            // 4.3c — Collect fids + coords via aggregate(), then find nearest in JS.
             exprEval.layer = layer
+            exprEval.project = qgisProject
             var tolerance = 0.000045
+            var layerName = layer.name
+
+            function evalExpr(expr) {
+                try {
+                    exprEval.expressionText = expr
+                    return exprEval.evaluate()
+                } catch (e) { return null }
+            }
+
+            var idsRaw = evalExpr(
+                "aggregate(layer:='" + layerName +
+                "', aggregate:='concatenate', expression:=to_string(\"fid\"), concatenator:='|')"
+            )
+            var xsRaw = evalExpr(
+                "aggregate(layer:='" + layerName +
+                "', aggregate:='concatenate', expression:=to_string(x($geometry)), concatenator:='|')"
+            )
+            var ysRaw = evalExpr(
+                "aggregate(layer:='" + layerName +
+                "', aggregate:='concatenate', expression:=to_string(y($geometry)), concatenator:='|')"
+            )
+
+            var idsStr = idsRaw == null ? "" : String(idsRaw)
+            var xsStr  = xsRaw  == null ? "" : String(xsRaw)
+            var ysStr  = ysRaw  == null ? "" : String(ysRaw)
+
+            var ids = idsStr ? idsStr.split("|") : []
+            var xs  = xsStr  ? xsStr.split("|")  : []
+            var ys  = ysStr  ? ysStr.split("|")  : []
+            var n = Math.min(ids.length, xs.length, ys.length)
+
+            console.log("[toron_sketcher] agg n=" + n +
+                        " first: id=" + ids[0] + " x=" + xs[0] + " y=" + ys[0])
 
             var nearestFid = -1
+            var nearestX = NaN, nearestY = NaN
             var bestDistSq = Infinity
-            var scanned = 0
-            var withGeom = 0
-
-            for (var fid = 1; fid <= 5000; fid++) {
-                var feat = layer.getFeature(fid)
-                if (!feat) continue
-                scanned++
-
-                var px = NaN, py = NaN
-
-                // Path A: direct geometry access (if exposed by the QML binding)
-                try {
-                    var g = feat.geometry
-                    if (g) {
-                        if (typeof g.x !== "undefined" && typeof g.y !== "undefined") {
-                            px = Number(g.x); py = Number(g.y)
-                        } else if (typeof g.asPoint === "function") {
-                            var pt = g.asPoint()
-                            if (pt) { px = Number(pt.x); py = Number(pt.y) }
-                        }
-                    }
-                } catch (e) {}
-
-                // Path B: per-feature expression fallback
-                if (isNaN(px) || isNaN(py)) {
-                    try {
-                        exprEval.feature = feat
-                        px = Number(exprEval.evaluate("x($geometry)"))
-                        py = Number(exprEval.evaluate("y($geometry)"))
-                    } catch (e) {}
-                }
-
+            for (var i = 0; i < n; i++) {
+                var px = Number(xs[i])
+                var py = Number(ys[i])
                 if (isNaN(px) || isNaN(py)) continue
-                withGeom++
 
                 var dx = px - tapX
                 var dy = py - tapY
                 var dsq = dx * dx + dy * dy
-
                 if (dsq < bestDistSq) {
                     bestDistSq = dsq
-                    nearestFid = fid
+                    nearestFid = Number(ids[i])
+                    nearestX = px
+                    nearestY = py
                 }
             }
 
             var bestDist = Math.sqrt(bestDistSq)
             var distStr = isFinite(bestDist) ? bestDist.toFixed(6) : "inf"
-            console.log("[toron_sketcher] scan scanned=" + scanned +
-                        " withGeom=" + withGeom +
-                        " nearestFid=" + nearestFid +
-                        " bestDist=" + bestDist)
 
             if (nearestFid < 0 || bestDist > tolerance) {
                 iface.mainWindow().displayToast(
-                    "Aucun poteau — scan " + withGeom + "/" + scanned +
-                    " best=" + nearestFid + " d=" + distStr +
-                    " tol=" + tolerance
+                    "n=" + n +
+                    " idsRaw[0:30]=" + idsStr.substring(0, 30) +
+                    " xsRaw[0:30]=" + xsStr.substring(0, 30) +
+                    " tap=(" + tapX.toFixed(2) + "," + tapY.toFixed(2) + ")"
                 )
                 return
             }
 
             iface.mainWindow().displayToast(
-                "scan " + withGeom + "/" + scanned +
-                " best=" + nearestFid + " d=" + distStr
+                "n=" + n + " fid=" + nearestFid + " d=" + distStr
             )
 
             // Get the pole name for the selected feature
@@ -202,10 +228,6 @@ Item {
             if (feat) {
                 nearestName = feat.attribute("nom_poteau_civique") || ("fid=" + nearestFid)
             }
-
-            // Placeholders (we can fetch real x/y later when building geometry)
-            var nearestX = tapX
-            var nearestY = tapY
 
             // Check not selecting same pole twice
             if (plugin.selectedPoles.length === 1 && plugin.selectedPoles[0].fid === nearestFid) {
@@ -237,16 +259,45 @@ Item {
         }
     }
 
-    // Phase 4.4 placeholder
     function createToron() {
-        iface.mainWindow().displayToast(
-            "2 poteaux: " +
-            plugin.selectedPoles[0].name + " \u2192 " +
-            plugin.selectedPoles[1].name +
-            " (cr\u00e9ation toron \u00e0 impl\u00e9menter)"
-        )
-        plugin.sketchingActive = false
-        plugin.selectedPoles = []
+        try {
+            var toronsLayer = findToronsLayer()
+            if (!toronsLayer) {
+                iface.mainWindow().displayToast("Couche TORONS introuvable")
+                return
+            }
+
+            var p1 = plugin.selectedPoles[0]
+            var p2 = plugin.selectedPoles[1]
+
+            var wkt = "MULTILINESTRING((" +
+                      p1.x + " " + p1.y + ", " +
+                      p2.x + " " + p2.y + "))"
+            console.log("[toron_sketcher] creating toron:", wkt)
+
+            var geometry = GeometryUtils.createGeometryFromWkt(wkt)
+            var feature = FeatureUtils.createBlankFeature(toronsLayer.fields, geometry)
+
+            if (!plugin.overlayFeatureFormDrawer) {
+                plugin.overlayFeatureFormDrawer = iface.findItemByObjectName("overlayFeatureFormDrawer")
+            }
+            if (!plugin.overlayFeatureFormDrawer) {
+                iface.mainWindow().displayToast("Form drawer introuvable")
+                return
+            }
+
+            plugin.overlayFeatureFormDrawer.featureModel.currentLayer = toronsLayer
+            plugin.overlayFeatureFormDrawer.featureModel.feature = feature
+            plugin.overlayFeatureFormDrawer.featureModel.resetAttributes(true)
+            plugin.overlayFeatureFormDrawer.state = "Add"
+            plugin.overlayFeatureFormDrawer.open()
+
+            plugin.sketchingActive = false
+            plugin.selectedPoles = []
+        } catch (e) {
+            console.error("[toron_sketcher] createToron failed:", e.message, e.stack)
+            try { iface.mainWindow().displayToast("Erreur toron: " + e) } catch (e2) {}
+        }
     }
 
     function toggleSketching() {
